@@ -1,0 +1,37 @@
+version: '3'
+
+services:
+  tbsim:
+    build:
+      context: .
+      dockerfile: Dockerfile.tbsim
+    volumes:
+      - /$HOME/proj/data_driven_traffic_sim/:/data_driven_traffic_sim
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /$HOME/.ssh/:/home/chia/.ssh/  # High risk, but needed for git
+    network_mode: host
+    ipc: host
+    privileged: true
+    cap_add:
+      - SYS_PTRACE
+    container_name: tbsim
+    environment:
+      - DISPLAY=${DISPLAY}
+    tty: true # To keep the container running, docker run -t
+    stdin_open: true #docker run -i
+    command: /bin/bash
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - compute
+                - graphics
+                - utility
+                - video
+                - display
+    runtime: nvidia
+    
