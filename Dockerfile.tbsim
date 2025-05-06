@@ -1,0 +1,96 @@
+# Use the base cuda 11.8 with ubuntu 20.04 image
+FROM nvidia/cuda:12.6.1-cudnn-devel-ubuntu24.04
+
+ARG SIM_ROOT=/data_driven_traffic_sim
+ENV SIM_ROOT=${SIM_ROOT}
+
+# Set non-interactive mode
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Set the timezone
+ENV TZ=Asia/Singapore
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone
+
+# Install planning dependencies
+RUN apt-get update && apt-get -y --no-install-recommends install \
+    sudo \
+    build-essential \
+    clang \
+    cmake \
+    cmake-curses-gui \
+    gdb \
+    wget \
+    nano \
+    htop \
+    pkg-config \
+    libgflags-dev \
+    libgoogle-glog-dev \
+    locate \
+    fd-find \
+    git \
+    clang-tidy \
+    clang-format \
+    graphviz \
+    libtbb-dev \
+    vim \
+    xterm \
+    curl \
+    software-properties-common 
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    zlib1g-dev libssl-dev libbz2-dev libreadline-dev \
+    libsqlite3-dev libffi-dev libncurses5-dev libgdbm-dev \
+    ffmpeg libsm6 libxext6
+
+RUN apt-get update \
+&& add-apt-repository universe \
+&& apt-get update
+
+# install Tcl/Tk dev headers under their generic names
+RUN apt-get install -y --no-install-recommends \
+      tcl-dev \
+      tk-dev
+
+# download, compile, and altinstall Python 3.8
+RUN wget https://www.python.org/ftp/python/3.8.18/Python-3.8.18.tgz \
+&& tar xzf Python-3.8.18.tgz \
+&& cd Python-3.8.18 \
+&& ./configure --enable-optimizations \
+&& make -j"$(nproc)" \
+&& make altinstall \
+&& cd .. \
+&& rm -rf Python-3.8.18 Python-3.8.18.tgz
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-louvain
+
+# point python3 → python3.8, pip3 → pip3.8
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.8 20 \
+&& update-alternatives --install /usr/bin/pip3   pip3   /usr/local/bin/pip3.8   20
+
+RUN pip3 install --break-system-packages \
+    torch torchvision torchaudio pytorch-lightning protobuf==3.20.0 torchtext
+#     --index-url https://download.pytorch.org/whl/cu126
+
+RUN awk -F: '{print $1, $3}' /etc/passwd
+
+# Create a directory for tbsim workspace
+WORKDIR ${SIM_ROOT}
+
+COPY trajdata_requirements.txt ${SIM_ROOT}/tbsim/
+
+RUN pip3 install --no-cache-dir --break-system-packages \
+      -r ${SIM_ROOT}/tbsim/trajdata_requirements.txt
+
+# Running as new user with the same group as local user
+RUN groupmod -n chia ubuntu   \
+ && usermod  -l chia -d /home/chia -m ubuntu \
+ && echo "chia ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/chia \
+ && chmod 0440 /etc/sudoers.d/chia
+
+USER chia
+
+RUN echo "export PYTHONPATH="${SIM_ROOT}/tbsim:${SIM_ROOT}/trajdata/src:${SIM_ROOT}/Pplan:$PYTHONPATH"" >> ~/.bashrc
+
+SHELL ["/bin/bash", "-c"]
